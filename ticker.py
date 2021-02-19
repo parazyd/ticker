@@ -25,6 +25,7 @@ eink screen (https://www.waveshare.com/wiki/2.13inch_e-Paper_HAT)
 """
 
 import sys
+from json.decoder import JSONDecodeError
 from os.path import join, dirname, realpath
 from time import time, strftime, sleep
 import matplotlib as mpl
@@ -58,7 +59,11 @@ def get_data(other):
     url_hist = '%s/%s/market_chart/range?vs_currency=%s&from=%s&to=%s' % (
                      API, 'bitcoin', 'usd', str(starttime), str(endtime))
 
-    timeseriesarray = requests.get(url_hist).json()['prices']
+    try:
+        timeseriesarray = requests.get(url_hist).json()['prices']
+    except JSONDecodeError:
+        print('Caught JSONDecodeError')
+        return None
     timeseriesstack = []
     length = len(timeseriesarray)
     i = 0
@@ -116,8 +121,10 @@ def update_display(pricestack, other, epd):
     image = Image.new('L', (250, 122), 255)
     draw = ImageDraw.Draw(image)
     if other['ATH'] is True:
+        print('%s (ATH!)' % pricenowstring)
         image.paste(athbitmap, (15, 30))
     else:
+        print(pricenowstring)
         image.paste(tokenimage, (0, 15))
 
     image.paste(sparkbitmap, (80, 15))
@@ -137,10 +144,11 @@ def main():
     def fullupdate(epd):
         other = {}
         pricestack = get_data(other)
+        if not pricestack:
+            return time()
         make_spark(pricestack)
         update_display(pricestack, other, epd)
-        lastgrab = time()
-        return lastgrab
+        return time()
 
     try:
         data_pulled = False
@@ -152,7 +160,7 @@ def main():
         # epd = None
 
         while True:
-            if (time() - lastcoinfetch > float(120)) or data_pulled is False:
+            if (time() - lastcoinfetch > float(60)) or data_pulled is False:
                 lastcoinfetch = fullupdate(epd)
                 data_pulled = True
             sleep(5)
