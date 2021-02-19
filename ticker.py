@@ -25,6 +25,7 @@ eink screen (https://www.waveshare.com/wiki/2.13inch_e-Paper_HAT)
 """
 
 import sys
+from io import BytesIO
 from json.decoder import JSONDecodeError
 from os.path import join, dirname, realpath
 from time import time, strftime, sleep
@@ -33,13 +34,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import requests
-from waveshare_epd import epd2in13_V2
 mpl.use('Agg')
 
 picdir = join(dirname(realpath(__file__)), 'images')
 fontdir = join(dirname(realpath(__file__)), 'fonts')
 font = ImageFont.truetype(join(fontdir, 'googlefonts/Roboto-Medium.ttf'), 40)
 font_date = ImageFont.truetype(join(fontdir, 'PixelSplitter-Bold.ttf'), 11)
+
+tokenfilename = join(picdir, 'currency/bitcoin.bmp')
+athbitmap = Image.open(join(picdir, 'ATH.bmp'))
+tokenimage = Image.open(tokenfilename)
 
 API = 'https://api.coingecko.com/api/v3/coins'
 
@@ -92,24 +96,28 @@ def make_spark(pricestack):
     _ax.set_yticks = ([])
     _ax.axhline(c='k', linewidth=4, linestyle=(0, (5, 2, 1, 2)))
 
-    plt.savefig(join(picdir, 'spark.png'), dpi=17)
-    imgspk = Image.open(join(picdir, 'spark.png'))
-    file_out = join(picdir, 'spark.bmp')
-    imgspk.save(file_out)
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=17)
+    buf.seek(0)
+    imgspk = Image.open(buf)
+
     plt.clf()
     _ax.cla()
     plt.close(fig)
+    return imgspk
 
 
-def update_display(pricestack, other, epd):
+def update_display(pricestack, sparkimage, other):
     """ Create an image from the data and send it to the display """
     days_ago = 7
     pricenow = pricestack[-1]
-    currencythumbnail = 'currency/bitcoin.bmp'
-    tokenfilename = join(picdir, currencythumbnail)
-    sparkbitmap = Image.open(join(picdir, 'spark.bmp'))
-    athbitmap = Image.open(join(picdir, 'ATH.bmp'))
-    tokenimage = Image.open(tokenfilename)
+
+    if not other.get('lastprice'):
+        other['lastprice'] = pricenow
+    elif pricenow == other['lastprice']:
+        return other
+
+    other['lastprice'] = pricenow
 
     pricechange = str('%+d' % round(
         (pricestack[-1]-pricestack[0]) / pricestack[-1]*100, 2))+'%'
@@ -127,7 +135,7 @@ def update_display(pricestack, other, epd):
         print(pricenowstring)
         image.paste(tokenimage, (0, 15))
 
-    image.paste(sparkbitmap, (80, 15))
+    image.paste(sparkimage, (80, 15))
     draw.text((130, 66), str(days_ago) + 'day : ' + pricechange,
               font=font_date, fill=0)
     draw.text((96, 73), '$'+pricenowstring, font=font, fill=0)
@@ -135,43 +143,61 @@ def update_display(pricestack, other, epd):
     draw.text((95, 5), str(strftime('%H:%M %a %d %b %Y')), font=font_date,
               fill=0)
 
-    # image.save('pic.bmp')
-    epd.display(epd.getbuffer(image))
+    display_eink(image)
+
+    return other
+
+
+def display_eink(image):
+    """ Wrapper to display or show image """
+    if epd:
+        epd.display(epd.getbuffer(image))
+    else:
+        image.show()
+
+
+def close_epd():
+    """ Cleanup for epd context """
+    if not epd:
+        return
+    epd.sleep()
+    epd.Dev_exit()
+    # epd2in13_V2.epdconfig.module_exit()
 
 
 def main():
     """ main routine """
-    def fullupdate(epd):
+    def fullupdate():
         other = {}
         pricestack = get_data(other)
         if not pricestack:
             return time()
-        make_spark(pricestack)
-        update_display(pricestack, other, epd)
+        sparkimage = make_spark(pricestack)
+        other = update_display(pricestack, sparkimage, other)
         return time()
 
     try:
         data_pulled = False
         lastcoinfetch = time()
 
-        epd = epd2in13_V2.EPD()
-        epd.init(epd.FULL_UPDATE)
-        epd.Clear(0xFF)
-        # epd = None
-
         while True:
             if (time() - lastcoinfetch > float(60)) or data_pulled is False:
-                lastcoinfetch = fullupdate(epd)
+                lastcoinfetch = fullupdate()
                 data_pulled = True
             sleep(5)
     except KeyboardInterrupt:
-        epd.sleep()
-        epd.Dev_exit()
-        epd2in13_V2.epdconfig.module_exit()
+        close_epd()
         return 1
 
     return 1
 
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '-d':
+        epd = None  # pylint: disable=C0103
+    else:
+        from waveshare_epd import epd2in13_V2  # pylint: disable=E0401
+        epd = epd2in13_V2.EPD()
+        epd.init(epd.FULL_UPDATE)
+        epd.Clear(0xFF)
     sys.exit(main())
