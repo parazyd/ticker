@@ -41,7 +41,10 @@ fontdir = join(dirname(realpath(__file__)), 'fonts')
 font = ImageFont.truetype(join(fontdir, 'googlefonts/Roboto-Medium.ttf'), 40)
 font_date = ImageFont.truetype(join(fontdir, 'PixelSplitter-Bold.ttf'), 11)
 
-tokenfilename = join(picdir, 'currency/bitcoin.bmp')
+currency = 'usd'
+coin = 'bitcoin'
+
+tokenfilename = join(picdir, 'currency/%s.bmp' % currency)
 athbitmap = Image.open(join(picdir, 'ATH.bmp'))
 tokenimage = Image.open(tokenfilename)
 
@@ -54,14 +57,14 @@ def get_data(other):
     endtime = int(time())
     starttime = endtime - 60*60*24*days_ago
 
-    geckourl = '%s/markets?vs_currency=%s&ids=%s' % (API, 'usd', 'bitcoin')
+    geckourl = '%s/markets?vs_currency=%s&ids=%s' % (API, currency, coin)
     liveprice = requests.get(geckourl).json()[0]
     pricenow = float(liveprice['current_price'])
     alltimehigh = float(liveprice['ath'])
     other['volume'] = float(liveprice['total_volume'])
 
     url_hist = '%s/%s/market_chart/range?vs_currency=%s&from=%s&to=%s' % (
-                     API, 'bitcoin', 'usd', str(starttime), str(endtime))
+                     API, coin, currency, str(starttime), str(endtime))
 
     try:
         timeseriesarray = requests.get(url_hist).json()['prices']
