@@ -44,7 +44,7 @@ font_date = ImageFont.truetype(join(fontdir, 'PixelSplitter-Bold.ttf'), 11)
 currency = 'usd'
 coin = 'bitcoin'
 
-tokenfilename = join(picdir, 'currency/%s.bmp' % currency)
+tokenfilename = join(picdir, 'currency/%s.bmp' % coin)
 athbitmap = Image.open(join(picdir, 'ATH.bmp'))
 tokenimage = Image.open(tokenfilename)
 
@@ -68,8 +68,8 @@ def get_data(other):
 
     try:
         timeseriesarray = requests.get(url_hist).json()['prices']
-    except JSONDecodeError:
-        print('Caught JSONDecodeError')
+    except JSONDecodeError as err:
+        print(f'Caught JSONDecodeError: {repr(err)}')
         return None
     timeseriesstack = []
     length = len(timeseriesarray)
