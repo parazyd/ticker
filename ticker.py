@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import requests
+
 mpl.use('Agg')
 
 picdir = join(dirname(realpath(__file__)), 'images')
@@ -41,30 +42,63 @@ fontdir = join(dirname(realpath(__file__)), 'fonts')
 font = ImageFont.truetype(join(fontdir, 'googlefonts/Roboto-Medium.ttf'), 40)
 font_date = ImageFont.truetype(join(fontdir, 'PixelSplitter-Bold.ttf'), 11)
 
-currency = 'usd'
-coin = 'bitcoin'
+pairs = [
+    {
+        "currency": "usd",
+        "coin": "bitcoin",
+        "image": Image.open(join(picdir, "currency/bitcoin.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "dogecoin",
+        "image": Image.open(join(picdir, "currency/dogecoin.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "ethereum",
+        "image": Image.open(join(picdir, "currency/ethereum.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "litecoin",
+        "image": Image.open(join(picdir, "currency/litecoin.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "monero",
+        "image": Image.open(join(picdir, "currency/monero.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "solana",
+        "image": Image.open(join(picdir, "currency/solana.png")),
+    },
+    {
+        "currency": "usd",
+        "coin": "zcash",
+        "image": Image.open(join(picdir, "currency/zcash.png")),
+    },
+]
 
-tokenfilename = join(picdir, 'currency/%s.bmp' % coin)
 athbitmap = Image.open(join(picdir, 'ATH.bmp'))
-tokenimage = Image.open(tokenfilename)
-
 API = 'https://api.coingecko.com/api/v3/coins'
 
 
-def get_data(other):
+def get_data(pair, other):
     """ Grab data from API """
     days_ago = 7
     endtime = int(time())
-    starttime = endtime - 60*60*24*days_ago
+    starttime = endtime - 60 * 60 * 24 * days_ago
 
-    geckourl = '%s/markets?vs_currency=%s&ids=%s' % (API, currency, coin)
+    geckourl = '%s/markets?vs_currency=%s&ids=%s' % (API, pair["currency"],
+                                                     pair["coin"])
     liveprice = requests.get(geckourl).json()[0]
     pricenow = float(liveprice['current_price'])
     alltimehigh = float(liveprice['ath'])
     other['volume'] = float(liveprice['total_volume'])
 
     url_hist = '%s/%s/market_chart/range?vs_currency=%s&from=%s&to=%s' % (
-                     API, coin, currency, str(starttime), str(endtime))
+        API, pair["coin"], pair["currency"], str(starttime), str(endtime))
 
     try:
         timeseriesarray = requests.get(url_hist).json()['prices']
@@ -83,6 +117,10 @@ def get_data(other):
         other['ATH'] = True
     else:
         other['ATH'] = False
+
+    other["image"] = pair["image"]
+    other["coin"] = pair["coin"]
+
     return timeseriesstack
 
 
@@ -91,7 +129,7 @@ def make_spark(pricestack):
     _x = pricestack - np.mean(pricestack)
     fig, _ax = plt.subplots(1, 1, figsize=(10, 3))
     plt.plot(_x, color='k', linewidth=6)
-    plt.plot(len(_x)-1, _x[-1], color='r', marker='o')
+    plt.plot(len(_x) - 1, _x[-1], color='r', marker='o')
 
     for _, i in _ax.spines.items():
         i.set_visible(False)
@@ -123,7 +161,7 @@ def update_display(pricestack, sparkimage, other):
     other['lastprice'] = pricenow
 
     pricechange = str('%+d' % round(
-        (pricestack[-1]-pricestack[0]) / pricestack[-1]*100, 2))+'%'
+        (pricestack[-1] - pricestack[0]) / pricestack[-1] * 100, 2)) + '%'
     if pricenow > 1000:
         pricenowstring = format(int(pricenow), ',')
     else:
@@ -132,18 +170,24 @@ def update_display(pricestack, sparkimage, other):
     image = Image.new('L', (250, 122), 255)
     draw = ImageDraw.Draw(image)
     if other['ATH'] is True:
-        print('%s (ATH!)' % pricenowstring)
+        print(f"{other['coin']}: {pricenowstring} (ATH!)")
         image.paste(athbitmap, (15, 30))
     else:
-        print(pricenowstring)
-        image.paste(tokenimage, (0, 15))
+        print(f"{other['coin']}: {pricenowstring}")
+        image.paste(other["image"], (5, 12))
+
+    draw.text((8, 92), other["coin"], font=font_date, fill=0)
 
     image.paste(sparkimage, (80, 15))
-    draw.text((130, 66), str(days_ago) + 'day : ' + pricechange,
-              font=font_date, fill=0)
-    draw.text((96, 73), '$'+pricenowstring, font=font, fill=0)
+    draw.text((130, 66),
+              str(days_ago) + 'day : ' + pricechange,
+              font=font_date,
+              fill=0)
+    draw.text((96, 73), '$' + pricenowstring, font=font, fill=0)
 
-    draw.text((95, 5), str(strftime('%H:%M %a %d %b %Y')), font=font_date,
+    draw.text((95, 5),
+              str(strftime('%H:%M %a %d %b %Y')),
+              font=font_date,
               fill=0)
 
     display_eink(image)
@@ -170,9 +214,10 @@ def close_epd():
 
 def main():
     """ main routine """
-    def fullupdate():
+
+    def fullupdate(pair):
         other = {}
-        pricestack = get_data(other)
+        pricestack = get_data(pair, other)
         if not pricestack:
             return time()
         sparkimage = make_spark(pricestack)
@@ -184,10 +229,11 @@ def main():
         lastcoinfetch = time()
 
         while True:
-            if (time() - lastcoinfetch > float(60)) or data_pulled is False:
-                lastcoinfetch = fullupdate()
-                data_pulled = True
-            sleep(5)
+            for i in pairs:
+                if (time() - lastcoinfetch > float(40)) or data_pulled is False:
+                    lastcoinfetch = fullupdate(i)
+                    data_pulled = True
+                sleep(5)
     except KeyboardInterrupt:
         close_epd()
         return 1
